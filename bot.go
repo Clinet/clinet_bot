@@ -37,49 +37,34 @@ func (b *Bot) Shutdown() {
 	}
 }
 
-//RegisterFeature adds an enabled feature's commands and blocks until feature.Init() finishes
+//RegisterFeature adds an enabled feature's commands, runs its init, and logs into its chat and convo services, as available and halting on error
 func (b *Bot) RegisterFeature(feature features.Feature) error {
 	if features.IsEnabled(feature.Name) {
 		if b.isRegisteredFeature(feature.Name) {
 			return fmt.Errorf("bot: cannot register feature %s twice", feature.Name)
+		}
+		if feature.Cmds != nil && len(feature.Cmds) > 0 {
+			cmds.Commands = append(cmds.Commands, feature.Cmds...)
 		}
 		if feature.Init != nil {
 			if err := feature.Init(); err != nil {
 				return fmt.Errorf("bot: init call for feature %s failed: %v", feature.Name, err)
 			}
 		}
-		if feature.Cmds != nil && len(feature.Cmds) > 0 {
-			cmds.Commands = append(cmds.Commands, feature.Cmds...)
+		if feature.ServiceChat != nil {
+			if err := feature.ServiceChat.Login(); err != nil {
+				return fmt.Errorf("bot: registering chat service for feature %s failed: %v", feature.Name, err)
+			}
+			b.registeredServices = append(b.registeredServices, feature.ServiceChat)
+		}
+		if feature.ServiceConvo != nil {
+			if err := feature.ServiceConvo.Login(); err != nil {
+				return fmt.Errorf("bot: registering conversation service for feature %s failed: %v", feature.Name, err)
+			}
+			convos.ConvoServices = append(convos.ConvoServices, feature.ServiceConvo)
 		}
 		b.registerFeature(feature.Name)
-	}
-	return nil
-}
-
-func (b *Bot) RegisterService(serviceName string, service services.Service) error {
-	if features.IsEnabled(serviceName) {
-		if b.isRegisteredFeature(serviceName) {
-			return fmt.Errorf("bot: cannot register service %s twice", serviceName)
-		}
-		if err := service.Login(); err != nil {
-			return fmt.Errorf("bot: error registering service %s: %v", serviceName, err)
-		}
-		b.registeredServices = append(b.registeredServices, service)
-		b.registerFeature(serviceName)
-	}
-	return nil
-}
-
-func (b *Bot) RegisterConvoService(serviceName string, service convos.ConvoService) error {
-	if features.IsEnabled(serviceName) {
-		if b.isRegisteredFeature(serviceName) {
-			return fmt.Errorf("bot: cannot register service %s twice", serviceName)
-		}
-		if err := service.Login(); err != nil {
-			return fmt.Errorf("bot: error registering service %s: %v", serviceName, err)
-		}
-		convos.ConvoServices = append(convos.ConvoServices, service)
-		b.registerFeature(serviceName)
+		features.UpdateFeature(feature)
 	}
 	return nil
 }
